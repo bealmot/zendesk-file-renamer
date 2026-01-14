@@ -43,7 +43,12 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "zendesk-file-renamer@example.com",
-      "strict_min_version": "91.0"
+      "strict_min_version": "91.0",
+      "data_collection_permissions": {
+        "required": false,
+        "user_data_collected": false,
+        "disclosure": "This extension does not collect, store, or transmit any user data."
+      }
     }
   }
 }
