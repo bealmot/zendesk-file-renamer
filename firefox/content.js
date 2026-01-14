@@ -161,11 +161,13 @@ function getFilenameFromLink(link) {
 /**
  * Handles click events on the document.
  *
- * Intercepts clicks on download links and modifies the filename.
+ * Intercepts clicks on download links, fetches the file, and triggers
+ * a new download with the renamed filename. This works around the
+ * cross-origin limitation of the download attribute.
  *
  * @param {MouseEvent} event - The click event.
  */
-function handleClick(event) {
+async function handleClick(event) {
   // Check if extension is enabled
   if (!settings.enabled) {
     return;
@@ -203,14 +205,50 @@ function handleClick(event) {
   // Format the new filename
   const newFilename = formatFilename(originalFilename, ticketId);
 
-  // Set the download attribute to force the new filename
-  link.download = newFilename;
-
-  console.log('[Zendesk File Renamer] Renamed download:', {
+  console.log('[Zendesk File Renamer] Intercepting download:', {
     original: originalFilename,
     new: newFilename,
-    ticketId: ticketId
+    ticketId: ticketId,
+    url: link.href
   });
+
+  // Prevent the default download
+  event.preventDefault();
+  event.stopPropagation();
+
+  try {
+    // Fetch the file
+    console.log('[Zendesk File Renamer] Fetching file...');
+    const response = await fetch(link.href, {
+      credentials: 'include' // Include cookies for authenticated downloads
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    // Convert to blob
+    const blob = await response.blob();
+
+    // Create a blob URL and trigger download with our filename
+    const blobUrl = URL.createObjectURL(blob);
+    const tempLink = document.createElement('a');
+    tempLink.href = blobUrl;
+    tempLink.download = newFilename;
+    tempLink.style.display = 'none';
+    document.body.appendChild(tempLink);
+    tempLink.click();
+    document.body.removeChild(tempLink);
+
+    // Clean up blob URL
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+
+    console.log('[Zendesk File Renamer] Download triggered:', newFilename);
+  } catch (error) {
+    console.error('[Zendesk File Renamer] Fetch failed, falling back to original:', error);
+    // Fall back to original download
+    window.location.href = link.href;
+  }
 }
 
 /**
