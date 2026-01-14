@@ -1,12 +1,8 @@
 /**
  * @fileoverview Firefox background script for Zendesk File Renamer.
  *
- * Minimal background script for Firefox. The heavy lifting is done
- * by the content script which intercepts download link clicks.
- *
- * This script handles:
- *   - Extension installation/update events
- *   - Default settings initialization
+ * Handles downloads initiated by the content script. Background scripts
+ * can bypass CORS restrictions and use the downloads API with custom filenames.
  */
 
 // ============================================================================
@@ -19,6 +15,40 @@ const DEFAULT_SETTINGS = {
 };
 
 const STORAGE_KEY = 'settings';
+
+// ============================================================================
+// MESSAGE HANDLING
+// ============================================================================
+
+/**
+ * Handle messages from content script.
+ */
+browser.runtime.onMessage.addListener(async (message, sender) => {
+  console.log('[Zendesk File Renamer] Message received:', message);
+
+  if (message.type === 'DOWNLOAD_FILE') {
+    try {
+      // Use Firefox's downloads API to download with custom filename
+      const downloadId = await browser.downloads.download({
+        url: message.url,
+        filename: message.filename,
+        saveAs: false
+      });
+
+      console.log('[Zendesk File Renamer] Download started:', {
+        id: downloadId,
+        filename: message.filename
+      });
+
+      return { success: true, downloadId };
+    } catch (error) {
+      console.error('[Zendesk File Renamer] Download failed:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  return { success: false, error: 'Unknown message type' };
+});
 
 // ============================================================================
 // INSTALLATION

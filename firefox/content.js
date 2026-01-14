@@ -217,37 +217,24 @@ async function handleClick(event) {
   event.stopPropagation();
 
   try {
-    // Fetch the file
-    console.log('[Zendesk File Renamer] Fetching file...');
-    const response = await fetch(link.href, {
-      credentials: 'include' // Include cookies for authenticated downloads
+    // Send message to background script to handle the download
+    // Background script can bypass CORS and use downloads API
+    console.log('[Zendesk File Renamer] Requesting download from background...');
+    const response = await browser.runtime.sendMessage({
+      type: 'DOWNLOAD_FILE',
+      url: link.href,
+      filename: newFilename
     });
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+    if (response && response.success) {
+      console.log('[Zendesk File Renamer] Download started:', newFilename);
+    } else {
+      throw new Error(response?.error || 'Download failed');
     }
-
-    // Convert to blob
-    const blob = await response.blob();
-
-    // Create a blob URL and trigger download with our filename
-    const blobUrl = URL.createObjectURL(blob);
-    const tempLink = document.createElement('a');
-    tempLink.href = blobUrl;
-    tempLink.download = newFilename;
-    tempLink.style.display = 'none';
-    document.body.appendChild(tempLink);
-    tempLink.click();
-    document.body.removeChild(tempLink);
-
-    // Clean up blob URL
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-
-    console.log('[Zendesk File Renamer] Download triggered:', newFilename);
   } catch (error) {
-    console.error('[Zendesk File Renamer] Fetch failed, falling back to original:', error);
+    console.error('[Zendesk File Renamer] Download failed, falling back to original:', error);
     // Fall back to original download
-    window.location.href = link.href;
+    window.open(link.href, '_blank');
   }
 }
 
