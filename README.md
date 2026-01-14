@@ -25,7 +25,7 @@ A Chrome/Arc browser extension that automatically renames downloaded files from 
 
 1. Download or clone this repository:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/zendesk-file-renamer.git
+   git clone https://github.com/bealmot/zendesk-file-renamer.git
    ```
 
 2. Open Chrome/Arc and navigate to `chrome://extensions`
@@ -97,8 +97,8 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 If this extension saves you time, consider supporting its development:
 
-- [Buy Me a Coffee](https://buymeacoffee.com/YOUR_USERNAME)
-- [GitHub Sponsors](https://github.com/sponsors/YOUR_USERNAME)
+- [Buy Me a Coffee](https://buymeacoffee.com/bealmot)
+- [GitHub Sponsors](https://github.com/sponsors/bealmot)
 - Star this repository
 
 ## License
