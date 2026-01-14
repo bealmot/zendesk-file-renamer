@@ -283,8 +283,27 @@ async function handleDownloadFilename(downloadItem, suggest) {
       const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
       console.log('[Zendesk File Renamer] Active tab:', activeTab?.id, activeTab?.url);
       if (activeTab && activeTab.id) {
-        ticketId = await getTicketIdForTab(activeTab.id);
-        console.log('[Zendesk File Renamer] Ticket from active tab:', ticketId);
+        // First check cache
+        ticketId = tabTicketMap.get(activeTab.id);
+        console.log('[Zendesk File Renamer] Ticket from cache:', ticketId);
+
+        // If not in cache, query content script directly (fixes timing issue)
+        if (!ticketId) {
+          console.log('[Zendesk File Renamer] Cache miss, querying content script...');
+          try {
+            const response = await chrome.tabs.sendMessage(activeTab.id, {
+              type: MESSAGE_TYPES.GET_TICKET
+            });
+            if (response && response.ticketId) {
+              ticketId = response.ticketId;
+              // Cache it for future downloads
+              tabTicketMap.set(activeTab.id, ticketId);
+              console.log('[Zendesk File Renamer] Ticket from content script:', ticketId);
+            }
+          } catch (msgError) {
+            console.log('[Zendesk File Renamer] Content script query failed:', msgError.message);
+          }
+        }
       }
     } catch (e) {
       console.log('[Zendesk File Renamer] Active tab error:', e);
