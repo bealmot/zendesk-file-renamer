@@ -5,9 +5,9 @@
   "description": "Automatically rename downloaded files from Zendesk tickets to include the ticket number for better organization.",
 
   "icons": {
-    "16": "../icons/icon16.png",
-    "48": "../icons/icon48.png",
-    "128": "../icons/icon128.png"
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
 
   "permissions": [
@@ -34,8 +34,8 @@
   "browser_action": {
     "default_popup": "popup/popup.html",
     "default_icon": {
-      "16": "../icons/icon16.png",
-      "48": "../icons/icon48.png"
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png"
     },
     "default_title": "Zendesk File Renamer"
   },
