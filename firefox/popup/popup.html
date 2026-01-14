@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  Zendesk File Renamer - Popup UI
+
+  This popup appears when clicking the extension icon in the toolbar.
+  It provides controls for:
+    - Enabling/disabling the extension
+    - Selecting the filename format
+    - Quick access to help and support
+
+  The popup runs in its own context and communicates with the background
+  script via chrome.storage for settings persistence.
+-->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zendesk File Renamer</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="header">
+      <h1 class="title">Zendesk File Renamer</h1>
+      <p class="subtitle">Organize your downloads</p>
+    </header>
+
+    <!-- Main Settings -->
+    <main class="settings">
+      <!-- Enable/Disable Toggle -->
+      <div class="setting-group">
+        <label class="toggle-label" for="enabled-toggle">
+          <span class="label-text">Enable Renaming</span>
+          <div class="toggle-switch">
+            <input
+              type="checkbox"
+              id="enabled-toggle"
+              class="toggle-input"
+            >
+            <span class="toggle-slider"></span>
+          </div>
+        </label>
+        <p class="setting-description">
+          Automatically rename downloaded files to include the Zendesk ticket number.
+        </p>
+      </div>
+
+      <!-- Format Selection -->
+      <div class="setting-group">
+        <label class="select-label" for="format-select">Filename Format</label>
+        <select id="format-select" class="format-select">
+          <!-- Options populated by JavaScript -->
+        </select>
+        <p class="format-preview">
+          Preview: <code id="format-preview-text">ZD-123456_attachment.log</code>
+        </p>
+      </div>
+    </main>
+
+    <!-- Footer with Links -->
+    <footer class="footer">
+      <div class="footer-links">
+        <a href="https://github.com/bealmot/zendesk-file-renamer" target="_blank" rel="noopener">
+          GitHub
+        </a>
+        <span class="separator">|</span>
+        <a href="https://github.com/bealmot/zendesk-file-renamer/issues" target="_blank" rel="noopener">
+          Report Issue
+        </a>
+      </div>
+      <div class="support-link">
+        <a href="https://buymeacoffee.com/bealmot" target="_blank" rel="noopener" class="donate-link">
+          Support Development
+        </a>
+      </div>
+    </footer>
+
+    <!-- Status indicator (shown when settings change) -->
+    <div id="status-toast" class="status-toast hidden">
+      Settings saved
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

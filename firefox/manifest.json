@@ -1,0 +1,47 @@
+{
+  "manifest_version": 2,
+  "name": "Zendesk File Renamer",
+  "version": "1.0.0",
+  "description": "Automatically rename downloaded files from Zendesk tickets to include the ticket number for better organization.",
+
+  "icons": {
+    "16": "../icons/icon16.png",
+    "48": "../icons/icon48.png",
+    "128": "../icons/icon128.png"
+  },
+
+  "permissions": [
+    "storage",
+    "activeTab",
+    "*://*.zendesk.com/*"
+  ],
+
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": false
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["*://*.zendesk.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "browser_action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "../icons/icon16.png",
+      "48": "../icons/icon48.png"
+    },
+    "default_title": "Zendesk File Renamer"
+  },
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "zendesk-file-renamer@example.com",
+      "strict_min_version": "91.0"
+    }
+  }
+}
