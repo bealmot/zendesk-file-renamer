@@ -129,7 +129,7 @@ This extension requires minimal permissions:
 
 - **Chrome** 88+ (Manifest V3 support)
 - **Arc** (Chromium-based, works identically to Chrome)
-- **Firefox** 91+ (Manifest V2, uses click interception)
+- **Firefox** 140+ (Manifest V2, uses click interception)
 - **Edge** (Chromium-based, should work but untested)
 - **Brave** (Chromium-based, should work but untested)
 
