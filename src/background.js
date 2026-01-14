@@ -165,15 +165,23 @@ function reconstructPath(originalPath, newFilename) {
 /**
  * Checks if a URL belongs to a Zendesk domain (or localhost for testing).
  *
+ * Zendesk uses multiple domains:
+ *   - *.zendesk.com - Main application
+ *   - *.zdusercontent.com - CDN for attachments/files
+ *   - *.zdassets.com - Static assets
+ *
  * @param {string} url - The URL to check.
  * @returns {boolean} True if the URL is a Zendesk domain or localhost.
  */
 function isZendeskUrl(url) {
   try {
     const urlObj = new URL(url);
-    // Include localhost for testing purposes
-    return urlObj.hostname.endsWith('.zendesk.com') ||
-           urlObj.hostname === 'localhost';
+    const hostname = urlObj.hostname;
+    // Include all Zendesk domains and localhost for testing
+    return hostname.endsWith('.zendesk.com') ||
+           hostname.endsWith('.zdusercontent.com') ||
+           hostname.endsWith('.zdassets.com') ||
+           hostname === 'localhost';
   } catch {
     return false;
   }
