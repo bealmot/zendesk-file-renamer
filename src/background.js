@@ -240,11 +240,15 @@ async function getTicketIdForTab(tabId) {
  * @param {Function} suggest - Callback to suggest a new filename.
  */
 async function handleDownloadFilename(downloadItem, suggest) {
+  console.log('[Zendesk File Renamer] Processing download...');
+
   // Get current settings
   const settings = await getSettings();
+  console.log('[Zendesk File Renamer] Settings:', settings);
 
   // If renaming is disabled, use original filename
   if (!settings.enabled) {
+    console.log('[Zendesk File Renamer] SKIP: Renaming disabled');
     suggest();
     return;
   }
@@ -254,10 +258,12 @@ async function handleDownloadFilename(downloadItem, suggest) {
   const referrerUrl = downloadItem.referrer || '';
   const tabId = downloadItem.tabId;
 
+  console.log('[Zendesk File Renamer] Referrer check:', referrerUrl, 'isZendesk:', isZendeskUrl(referrerUrl));
+
   // Verify this is from a Zendesk page
   if (!isZendeskUrl(referrerUrl) && !tabId) {
     // Download not from a Zendesk tab
-    console.debug('[Zendesk File Renamer] Skipping - not from Zendesk:', referrerUrl);
+    console.log('[Zendesk File Renamer] SKIP: Not from Zendesk, referrer:', referrerUrl);
     suggest();
     return;
   }
@@ -267,24 +273,28 @@ async function handleDownloadFilename(downloadItem, suggest) {
 
   if (tabId && tabId !== -1) {
     ticketId = await getTicketIdForTab(tabId);
+    console.log('[Zendesk File Renamer] Ticket from tabId:', tabId, '→', ticketId);
   }
 
   // Fallback: if no tabId (e.g., data: URI downloads), try active tab
   if (!ticketId && isZendeskUrl(referrerUrl)) {
+    console.log('[Zendesk File Renamer] Trying active tab fallback...');
     try {
       const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      console.log('[Zendesk File Renamer] Active tab:', activeTab?.id, activeTab?.url);
       if (activeTab && activeTab.id) {
         ticketId = await getTicketIdForTab(activeTab.id);
-        console.debug('[Zendesk File Renamer] Using active tab ticket:', ticketId);
+        console.log('[Zendesk File Renamer] Ticket from active tab:', ticketId);
       }
     } catch (e) {
-      console.debug('[Zendesk File Renamer] Could not get active tab:', e);
+      console.log('[Zendesk File Renamer] Active tab error:', e);
     }
   }
 
   // If we couldn't determine the ticket ID, keep original filename
   if (!ticketId) {
-    console.debug('[Zendesk File Renamer] No ticket ID found for download');
+    console.log('[Zendesk File Renamer] SKIP: No ticket ID found');
+    console.log('[Zendesk File Renamer] Current tabTicketMap:', [...tabTicketMap.entries()]);
     suggest();
     return;
   }
