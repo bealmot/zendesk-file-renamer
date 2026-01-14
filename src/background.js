@@ -276,37 +276,45 @@ async function handleDownloadFilename(downloadItem, suggest) {
     console.log('[Zendesk File Renamer] Ticket from tabId:', tabId, '→', ticketId);
   }
 
-  // Fallback: if no tabId (e.g., data: URI downloads), try active tab
+  // Fallback: if no tabId (e.g., data: URI downloads), search for ticket
   if (!ticketId && isZendeskUrl(referrerUrl)) {
-    console.log('[Zendesk File Renamer] Trying active tab fallback...');
-    try {
-      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      console.log('[Zendesk File Renamer] Active tab:', activeTab?.id, activeTab?.url);
-      if (activeTab && activeTab.id) {
-        // First check cache
-        ticketId = tabTicketMap.get(activeTab.id);
-        console.log('[Zendesk File Renamer] Ticket from cache:', ticketId);
+    console.log('[Zendesk File Renamer] Trying fallback methods...');
 
-        // If not in cache, query content script directly (fixes timing issue)
-        if (!ticketId) {
-          console.log('[Zendesk File Renamer] Cache miss, querying content script...');
+    // Method 1: Check if we have ANY cached ticket (most recent)
+    if (tabTicketMap.size > 0) {
+      // Get the most recently added ticket from cache
+      const entries = [...tabTicketMap.entries()];
+      const [cachedTabId, cachedTicket] = entries[entries.length - 1];
+      ticketId = cachedTicket;
+      console.log('[Zendesk File Renamer] Using cached ticket from tab', cachedTabId, ':', ticketId);
+    }
+
+    // Method 2: Query all Zendesk tabs if no cache
+    if (!ticketId) {
+      console.log('[Zendesk File Renamer] No cache, querying all Zendesk tabs...');
+      try {
+        const zendeskTabs = await chrome.tabs.query({ url: '*://*.zendesk.com/*' });
+        console.log('[Zendesk File Renamer] Found', zendeskTabs.length, 'Zendesk tabs');
+
+        for (const tab of zendeskTabs) {
           try {
-            const response = await chrome.tabs.sendMessage(activeTab.id, {
+            const response = await chrome.tabs.sendMessage(tab.id, {
               type: MESSAGE_TYPES.GET_TICKET
             });
             if (response && response.ticketId) {
               ticketId = response.ticketId;
-              // Cache it for future downloads
-              tabTicketMap.set(activeTab.id, ticketId);
-              console.log('[Zendesk File Renamer] Ticket from content script:', ticketId);
+              tabTicketMap.set(tab.id, ticketId);
+              console.log('[Zendesk File Renamer] Got ticket from tab', tab.id, ':', ticketId);
+              break;
             }
           } catch (msgError) {
-            console.log('[Zendesk File Renamer] Content script query failed:', msgError.message);
+            // Tab might not have content script, continue to next
+            console.debug('[Zendesk File Renamer] Tab', tab.id, 'failed:', msgError.message);
           }
         }
+      } catch (e) {
+        console.log('[Zendesk File Renamer] Tab query error:', e);
       }
-    } catch (e) {
-      console.log('[Zendesk File Renamer] Active tab error:', e);
     }
   }
 
