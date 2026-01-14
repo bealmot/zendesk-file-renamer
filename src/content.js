@@ -280,21 +280,21 @@ function initialize() {
     ticketId: initialTicketId
   });
 
-  // Zendesk is an SPA - the URL might not be ready on first load.
-  // Poll briefly to catch late URL updates.
-  let pollCount = 0;
-  const pollInterval = setInterval(() => {
-    pollCount++;
-    const ticketId = getCurrentTicketId();
-    if (ticketId && ticketId !== lastKnownTicketId) {
-      console.log('[Zendesk File Renamer] Detected ticket via polling:', ticketId);
-      notifyBackgroundOfTicket(ticketId);
+  // Zendesk is an SPA - continuously monitor for URL/ticket changes.
+  // The history API wrappers don't catch all Zendesk navigation methods.
+  let lastCheckedUrl = window.location.href;
+  setInterval(() => {
+    const currentUrl = window.location.href;
+    // Check if URL changed or if ticket ID changed
+    if (currentUrl !== lastCheckedUrl) {
+      lastCheckedUrl = currentUrl;
+      const ticketId = getCurrentTicketId();
+      if (ticketId !== lastKnownTicketId) {
+        console.log('[Zendesk File Renamer] URL change detected, ticket:', ticketId);
+        notifyBackgroundOfTicket(ticketId);
+      }
     }
-    // Stop polling after 5 seconds
-    if (pollCount >= 10) {
-      clearInterval(pollInterval);
-    }
-  }, 500);
+  }, 1000);
 }
 
 // Run initialization
