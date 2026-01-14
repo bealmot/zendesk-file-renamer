@@ -17,7 +17,8 @@
   ],
 
   "host_permissions": [
-    "*://*.zendesk.com/*"
+    "*://*.zendesk.com/*",
+    "http://localhost/*"
   ],
 
   "background": {
@@ -27,7 +28,7 @@
 
   "content_scripts": [
     {
-      "matches": ["*://*.zendesk.com/*"],
+      "matches": ["*://*.zendesk.com/*", "http://localhost/*"],
       "js": ["src/content.js"],
       "run_at": "document_idle"
     }

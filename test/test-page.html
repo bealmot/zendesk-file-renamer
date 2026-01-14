@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Zendesk File Renamer - Test Page</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    h1 { color: #03363d; }
+    .ticket-info {
+      background: #f5f5f5;
+      padding: 20px;
+      border-radius: 8px;
+      margin: 20px 0;
+    }
+    .download-link {
+      display: inline-block;
+      background: #1a73e8;
+      color: white;
+      padding: 12px 24px;
+      border-radius: 4px;
+      text-decoration: none;
+      margin: 10px 5px 10px 0;
+    }
+    .download-link:hover {
+      background: #1557b0;
+    }
+    .instructions {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      padding: 15px;
+      border-radius: 4px;
+      margin: 20px 0;
+    }
+    code {
+      background: #e9ecef;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Zendesk File Renamer - Test Page</h1>
+
+  <div class="instructions">
+    <strong>Testing Instructions:</strong>
+    <ol>
+      <li>Make sure the extension is loaded in Chrome</li>
+      <li>This page simulates ticket <code>#123456</code></li>
+      <li>Click a download link below</li>
+      <li>The file should be renamed to include <code>ZD-123456_</code></li>
+    </ol>
+  </div>
+
+  <div class="ticket-info">
+    <h2>Ticket #123456</h2>
+    <p><strong>Subject:</strong> Test ticket for extension development</p>
+    <p><strong>Status:</strong> Open</p>
+  </div>
+
+  <h3>Test Downloads</h3>
+  <p>Click these to test the renaming:</p>
+
+  <!-- These create downloadable files using data URIs -->
+  <a class="download-link" href="data:text/plain;charset=utf-8,This%20is%20a%20test%20log%20file%0ALine%202%0ALine%203" download="debug.log">
+    Download debug.log
+  </a>
+
+  <a class="download-link" href="data:text/plain;charset=utf-8,Sample%20attachment%20content" download="attachment.txt">
+    Download attachment.txt
+  </a>
+
+  <a class="download-link" href="data:application/json;charset=utf-8,%7B%22test%22%3A%20true%7D" download="config.json">
+    Download config.json
+  </a>
+
+  <h3>Console Output</h3>
+  <p>Open DevTools (F12) → Console to see extension logs.</p>
+
+  <script>
+    // Set the hash to simulate a Zendesk ticket URL
+    if (!window.location.hash) {
+      window.location.hash = '/tickets/123456';
+    }
+
+    // Log to help with debugging
+    console.log('[Test Page] Loaded');
+    console.log('[Test Page] URL:', window.location.href);
+    console.log('[Test Page] Hash:', window.location.hash);
+    console.log('[Test Page] If extension is working, you should see "[Zendesk File Renamer]" logs');
+  </script>
+</body>
+</html>

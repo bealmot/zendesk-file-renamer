@@ -163,15 +163,17 @@ function reconstructPath(originalPath, newFilename) {
 // ============================================================================
 
 /**
- * Checks if a URL belongs to a Zendesk domain.
+ * Checks if a URL belongs to a Zendesk domain (or localhost for testing).
  *
  * @param {string} url - The URL to check.
- * @returns {boolean} True if the URL is a Zendesk domain.
+ * @returns {boolean} True if the URL is a Zendesk domain or localhost.
  */
 function isZendeskUrl(url) {
   try {
     const urlObj = new URL(url);
-    return urlObj.hostname.endsWith('.zendesk.com');
+    // Include localhost for testing purposes
+    return urlObj.hostname.endsWith('.zendesk.com') ||
+           urlObj.hostname === 'localhost';
   } catch {
     return false;
   }
@@ -245,8 +247,9 @@ async function handleDownloadFilename(downloadItem, suggest) {
   const tabId = downloadItem.tabId;
 
   // Verify this is from a Zendesk page
-  if (!isZendeskUrl(referrerUrl) && tabId === -1) {
+  if (!isZendeskUrl(referrerUrl) && !tabId) {
     // Download not from a Zendesk tab
+    console.debug('[Zendesk File Renamer] Skipping - not from Zendesk:', referrerUrl);
     suggest();
     return;
   }
@@ -254,8 +257,21 @@ async function handleDownloadFilename(downloadItem, suggest) {
   // Get the ticket ID for this tab
   let ticketId = null;
 
-  if (tabId !== -1) {
+  if (tabId && tabId !== -1) {
     ticketId = await getTicketIdForTab(tabId);
+  }
+
+  // Fallback: if no tabId (e.g., data: URI downloads), try active tab
+  if (!ticketId && isZendeskUrl(referrerUrl)) {
+    try {
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (activeTab && activeTab.id) {
+        ticketId = await getTicketIdForTab(activeTab.id);
+        console.debug('[Zendesk File Renamer] Using active tab ticket:', ticketId);
+      }
+    } catch (e) {
+      console.debug('[Zendesk File Renamer] Could not get active tab:', e);
+    }
   }
 
   // If we couldn't determine the ticket ID, keep original filename
@@ -312,6 +328,8 @@ async function handleDownloadFilename(downloadItem, suggest) {
  * @returns {boolean} True if response will be sent asynchronously.
  */
 function handleMessage(message, sender, sendResponse) {
+  console.log('[Zendesk File Renamer] Message received:', message, 'from tab:', sender.tab?.id);
+
   if (message.type === MESSAGE_TYPES.TICKET_UPDATE) {
     // Content script is reporting a ticket ID
     const tabId = sender.tab?.id;
@@ -380,6 +398,12 @@ function handleTabUpdated(tabId, changeInfo, tab) {
 // Download interception - the core functionality
 // Note: Must return true from the listener to indicate async response
 chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
+  console.log('[Zendesk File Renamer] Download intercepted:', {
+    filename: downloadItem.filename,
+    url: downloadItem.url?.substring(0, 100),
+    referrer: downloadItem.referrer,
+    tabId: downloadItem.tabId
+  });
   // Handle asynchronously
   handleDownloadFilename(downloadItem, suggest);
   // Return true to indicate we'll call suggest() asynchronously
