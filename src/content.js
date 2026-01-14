@@ -279,6 +279,22 @@ function initialize() {
   console.log('[Zendesk File Renamer] Content script initialized', {
     ticketId: initialTicketId
   });
+
+  // Zendesk is an SPA - the URL might not be ready on first load.
+  // Poll briefly to catch late URL updates.
+  let pollCount = 0;
+  const pollInterval = setInterval(() => {
+    pollCount++;
+    const ticketId = getCurrentTicketId();
+    if (ticketId && ticketId !== lastKnownTicketId) {
+      console.log('[Zendesk File Renamer] Detected ticket via polling:', ticketId);
+      notifyBackgroundOfTicket(ticketId);
+    }
+    // Stop polling after 5 seconds
+    if (pollCount >= 10) {
+      clearInterval(pollInterval);
+    }
+  }, 500);
 }
 
 // Run initialization
