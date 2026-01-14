@@ -168,12 +168,7 @@ function getFilenameFromLink(link) {
  * @param {MouseEvent} event - The click event.
  */
 async function handleClick(event) {
-  // Check if extension is enabled
-  if (!settings.enabled) {
-    return;
-  }
-
-  // Find the clicked link (might be a child element)
+  // Find the clicked link FIRST (before any checks)
   const link = event.target.closest('a[href]');
   if (!link) {
     return;
@@ -181,6 +176,20 @@ async function handleClick(event) {
 
   // Check if this is a Zendesk download link
   if (!isZendeskDownloadUrl(link.href)) {
+    return;
+  }
+
+  // IMMEDIATELY prevent default to stop page navigation
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+
+  console.log('[Zendesk File Renamer] CLICK INTERCEPTED:', link.href);
+
+  // Check if extension is enabled
+  if (!settings.enabled) {
+    console.log('[Zendesk File Renamer] Extension disabled, opening original');
+    window.open(link.href, '_blank');
     return;
   }
 
@@ -205,16 +214,11 @@ async function handleClick(event) {
   // Format the new filename
   const newFilename = formatFilename(originalFilename, ticketId);
 
-  console.log('[Zendesk File Renamer] Intercepting download:', {
+  console.log('[Zendesk File Renamer] Renaming download:', {
     original: originalFilename,
     new: newFilename,
-    ticketId: ticketId,
-    url: link.href
+    ticketId: ticketId
   });
-
-  // Prevent the default download
-  event.preventDefault();
-  event.stopPropagation();
 
   try {
     // Send message to background script to handle the download
