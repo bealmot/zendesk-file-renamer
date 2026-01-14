@@ -1,0 +1,412 @@
+/**
+ * @fileoverview Background service worker for Zendesk File Renamer.
+ *
+ * This is the core of the extension. It runs as a service worker in the
+ * background and handles:
+ *   1. Receiving ticket ID updates from content scripts
+ *   2. Intercepting file downloads
+ *   3. Renaming files to include the ticket ID
+ *   4. Managing extension settings
+ *
+ * Service workers in Manifest V3 are event-driven and may be terminated
+ * when idle. All state must be stored persistently or reconstructed
+ * from messages.
+ *
+ * @see https://developer.chrome.com/docs/extensions/mv3/service_workers/
+ */
+
+import {
+  FILENAME_FORMATS,
+  DEFAULT_SETTINGS,
+  MESSAGE_TYPES,
+  STORAGE_KEYS
+} from './utils/constants.js';
+
+// ============================================================================
+// STATE MANAGEMENT
+// ============================================================================
+
+/**
+ * Maps tab IDs to their current Zendesk ticket IDs.
+ *
+ * This allows the extension to handle multiple Zendesk tabs simultaneously,
+ * renaming downloads with the correct ticket ID for each tab.
+ *
+ * Note: This state is lost when the service worker is terminated.
+ * Content scripts will re-send their ticket IDs when the worker restarts.
+ *
+ * @type {Map<number, string>}
+ */
+const tabTicketMap = new Map();
+
+// ============================================================================
+// SETTINGS MANAGEMENT
+// ============================================================================
+
+/**
+ * Retrieves the current extension settings from storage.
+ *
+ * Uses chrome.storage.sync which syncs settings across the user's
+ * Chrome instances. Falls back to defaults if no settings exist.
+ *
+ * @returns {Promise<Object>} The current settings object.
+ * @property {boolean} enabled - Whether file renaming is active.
+ * @property {string} format - ID of the active filename format.
+ */
+async function getSettings() {
+  try {
+    const result = await chrome.storage.sync.get(STORAGE_KEYS.SETTINGS);
+    return result[STORAGE_KEYS.SETTINGS] || DEFAULT_SETTINGS;
+  } catch (error) {
+    console.error('[Zendesk File Renamer] Failed to load settings:', error);
+    return DEFAULT_SETTINGS;
+  }
+}
+
+/**
+ * Gets the format template for a given format ID.
+ *
+ * @param {string} formatId - The format identifier.
+ * @returns {string} The format template string.
+ */
+function getFormatTemplate(formatId) {
+  // Find the format object by ID
+  for (const format of Object.values(FILENAME_FORMATS)) {
+    if (format.id === formatId) {
+      return format.template;
+    }
+  }
+
+  // Fall back to default format
+  return FILENAME_FORMATS.PREFIX_UNDERSCORE.template;
+}
+
+// ============================================================================
+// FILENAME FORMATTING
+// ============================================================================
+
+/**
+ * Generates a new filename with the ticket ID included.
+ *
+ * Takes the original filename and applies the user's chosen format
+ * to prepend the ticket ID.
+ *
+ * @param {string} originalFilename - The original download filename.
+ * @param {string} ticketId - The Zendesk ticket ID.
+ * @param {string} formatTemplate - The format template to apply.
+ * @returns {string} The new filename with ticket ID included.
+ *
+ * @example
+ * formatFilename('debug.log', '123456', 'ZD-{ticket}_{filename}');
+ * // Returns: 'ZD-123456_debug.log'
+ *
+ * @example
+ * formatFilename('attachment.pdf', '789', '[{ticket}] {filename}');
+ * // Returns: '[789] attachment.pdf'
+ */
+function formatFilename(originalFilename, ticketId, formatTemplate) {
+  return formatTemplate
+    .replace('{ticket}', ticketId)
+    .replace('{filename}', originalFilename);
+}
+
+/**
+ * Extracts the filename from a full path.
+ *
+ * Downloads may include subdirectory paths. This function extracts
+ * just the filename component for renaming.
+ *
+ * @param {string} fullPath - The full download path (may include directories).
+ * @returns {string} Just the filename component.
+ *
+ * @example
+ * extractFilename('downloads/zendesk/debug.log');
+ * // Returns: 'debug.log'
+ */
+function extractFilename(fullPath) {
+  // Handle both forward and back slashes
+  const parts = fullPath.split(/[/\\]/);
+  return parts[parts.length - 1];
+}
+
+/**
+ * Reconstructs a path with a new filename.
+ *
+ * If the download had a subdirectory path, this preserves it
+ * while replacing the filename.
+ *
+ * @param {string} originalPath - The original full path.
+ * @param {string} newFilename - The new filename to use.
+ * @returns {string} The path with the new filename.
+ *
+ * @example
+ * reconstructPath('subdir/original.log', 'ZD-123_original.log');
+ * // Returns: 'subdir/ZD-123_original.log'
+ */
+function reconstructPath(originalPath, newFilename) {
+  const lastSlash = Math.max(
+    originalPath.lastIndexOf('/'),
+    originalPath.lastIndexOf('\\')
+  );
+
+  if (lastSlash === -1) {
+    // No directory component
+    return newFilename;
+  }
+
+  // Preserve directory path
+  return originalPath.substring(0, lastSlash + 1) + newFilename;
+}
+
+// ============================================================================
+// TAB AND URL UTILITIES
+// ============================================================================
+
+/**
+ * Checks if a URL belongs to a Zendesk domain.
+ *
+ * @param {string} url - The URL to check.
+ * @returns {boolean} True if the URL is a Zendesk domain.
+ */
+function isZendeskUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname.endsWith('.zendesk.com');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Gets the ticket ID for a given tab.
+ *
+ * First checks the in-memory cache. If not found (e.g., service worker
+ * was restarted), queries the content script directly.
+ *
+ * @param {number} tabId - The Chrome tab ID.
+ * @returns {Promise<string|null>} The ticket ID or null if not found.
+ */
+async function getTicketIdForTab(tabId) {
+  // Check in-memory cache first
+  if (tabTicketMap.has(tabId)) {
+    return tabTicketMap.get(tabId);
+  }
+
+  // Query the content script directly
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, {
+      type: MESSAGE_TYPES.GET_TICKET
+    });
+
+    if (response && response.ticketId) {
+      // Cache the result
+      tabTicketMap.set(tabId, response.ticketId);
+      return response.ticketId;
+    }
+  } catch (error) {
+    // Content script may not be loaded yet - this is normal
+    console.debug('[Zendesk File Renamer] Could not query tab:', tabId, error.message);
+  }
+
+  return null;
+}
+
+// ============================================================================
+// DOWNLOAD INTERCEPTION
+// ============================================================================
+
+/**
+ * Handles the download filename determination event.
+ *
+ * This is the core download interception logic. Chrome fires this event
+ * when a download is about to start, giving us a chance to suggest a
+ * different filename.
+ *
+ * The suggest() callback must be called exactly once, either:
+ *   - With a new filename: suggest({ filename: 'new-name.txt' })
+ *   - Without arguments to keep original: suggest()
+ *
+ * @param {Object} downloadItem - Information about the download.
+ * @param {Function} suggest - Callback to suggest a new filename.
+ */
+async function handleDownloadFilename(downloadItem, suggest) {
+  // Get current settings
+  const settings = await getSettings();
+
+  // If renaming is disabled, use original filename
+  if (!settings.enabled) {
+    suggest();
+    return;
+  }
+
+  // Check if this download originated from a Zendesk tab
+  // downloadItem.referrer or downloadItem.url may indicate the source
+  const referrerUrl = downloadItem.referrer || '';
+  const tabId = downloadItem.tabId;
+
+  // Verify this is from a Zendesk page
+  if (!isZendeskUrl(referrerUrl) && tabId === -1) {
+    // Download not from a Zendesk tab
+    suggest();
+    return;
+  }
+
+  // Get the ticket ID for this tab
+  let ticketId = null;
+
+  if (tabId !== -1) {
+    ticketId = await getTicketIdForTab(tabId);
+  }
+
+  // If we couldn't determine the ticket ID, keep original filename
+  if (!ticketId) {
+    console.debug('[Zendesk File Renamer] No ticket ID found for download');
+    suggest();
+    return;
+  }
+
+  // Extract just the filename from the path
+  const originalFilename = extractFilename(downloadItem.filename);
+
+  // Check if file already has a ticket prefix (avoid double-renaming)
+  if (originalFilename.startsWith('ZD-') ||
+      originalFilename.startsWith('[') ||
+      /^\d+-/.test(originalFilename)) {
+    console.debug('[Zendesk File Renamer] File already appears renamed:', originalFilename);
+    suggest();
+    return;
+  }
+
+  // Generate the new filename
+  const formatTemplate = getFormatTemplate(settings.format);
+  const newFilename = formatFilename(originalFilename, ticketId, formatTemplate);
+
+  // Reconstruct full path with new filename
+  const newPath = reconstructPath(downloadItem.filename, newFilename);
+
+  console.log('[Zendesk File Renamer] Renaming download:', {
+    original: downloadItem.filename,
+    new: newPath,
+    ticketId: ticketId
+  });
+
+  // Suggest the new filename
+  suggest({ filename: newPath });
+}
+
+// ============================================================================
+// MESSAGE HANDLING
+// ============================================================================
+
+/**
+ * Handles messages from content scripts and popup.
+ *
+ * Content scripts send TICKET_UPDATE messages when:
+ *   - Page first loads
+ *   - User navigates to a different ticket
+ *   - URL changes within the SPA
+ *
+ * @param {Object} message - The message object.
+ * @param {Object} sender - Information about the sender.
+ * @param {Function} sendResponse - Callback for response.
+ * @returns {boolean} True if response will be sent asynchronously.
+ */
+function handleMessage(message, sender, sendResponse) {
+  if (message.type === MESSAGE_TYPES.TICKET_UPDATE) {
+    // Content script is reporting a ticket ID
+    const tabId = sender.tab?.id;
+
+    if (tabId) {
+      if (message.ticketId) {
+        // Store the ticket ID for this tab
+        tabTicketMap.set(tabId, message.ticketId);
+        console.debug('[Zendesk File Renamer] Ticket update:', {
+          tabId,
+          ticketId: message.ticketId
+        });
+      } else {
+        // No ticket ID (user navigated away from ticket view)
+        tabTicketMap.delete(tabId);
+      }
+    }
+  }
+
+  // Synchronous response
+  return false;
+}
+
+// ============================================================================
+// TAB LIFECYCLE
+// ============================================================================
+
+/**
+ * Cleans up state when a tab is closed.
+ *
+ * Removes the ticket ID mapping to prevent memory leaks
+ * from accumulating stale data.
+ *
+ * @param {number} tabId - The ID of the closed tab.
+ */
+function handleTabRemoved(tabId) {
+  tabTicketMap.delete(tabId);
+}
+
+/**
+ * Handles tab URL updates.
+ *
+ * If a tab navigates away from Zendesk, clear its ticket ID.
+ * The content script will send a new update if they return.
+ *
+ * @param {number} tabId - The tab ID.
+ * @param {Object} changeInfo - What changed.
+ * @param {Object} tab - Full tab information.
+ */
+function handleTabUpdated(tabId, changeInfo, tab) {
+  // Only care about URL changes
+  if (!changeInfo.url) {
+    return;
+  }
+
+  // If navigated away from Zendesk, clear the mapping
+  if (!isZendeskUrl(changeInfo.url)) {
+    tabTicketMap.delete(tabId);
+  }
+}
+
+// ============================================================================
+// EVENT LISTENERS
+// ============================================================================
+
+// Download interception - the core functionality
+// Note: Must return true from the listener to indicate async response
+chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
+  // Handle asynchronously
+  handleDownloadFilename(downloadItem, suggest);
+  // Return true to indicate we'll call suggest() asynchronously
+  return true;
+});
+
+// Message handling from content scripts
+chrome.runtime.onMessage.addListener(handleMessage);
+
+// Tab lifecycle management
+chrome.tabs.onRemoved.addListener(handleTabRemoved);
+chrome.tabs.onUpdated.addListener(handleTabUpdated);
+
+// ============================================================================
+// INITIALIZATION
+// ============================================================================
+
+/**
+ * Initialize the service worker.
+ *
+ * Service workers may be started and stopped frequently.
+ * This initialization is minimal - most state is reconstructed
+ * from content script messages as needed.
+ */
+function initialize() {
+  console.log('[Zendesk File Renamer] Service worker initialized');
+}
+
+// Run initialization
+initialize();
