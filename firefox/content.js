@@ -22,10 +22,11 @@ const TICKET_URL_PATTERNS = [
 ];
 
 /**
- * Domains that indicate a Zendesk download link.
+ * Domains that indicate a Zendesk download/attachment link.
+ * NOTE: We intentionally exclude .zendesk.com because that's the main site
+ * for navigation (tickets, settings, etc). Only CDN domains are downloads.
  */
 const ZENDESK_DOWNLOAD_DOMAINS = [
-  '.zendesk.com',
   '.zdusercontent.com',
   '.zdassets.com'
 ];
@@ -196,7 +197,9 @@ async function handleClick(event) {
   // Get current ticket ID
   const ticketId = getCurrentTicketId();
   if (!ticketId) {
-    console.debug('[Zendesk File Renamer] No ticket ID found, skipping rename');
+    console.debug('[Zendesk File Renamer] No ticket ID found, downloading without rename');
+    // Still trigger the download, just without renaming
+    window.open(link.href, '_blank');
     return;
   }
 
