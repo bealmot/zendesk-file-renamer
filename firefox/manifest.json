@@ -45,5 +45,9 @@
       "id": "zendesk-file-renamer@example.com",
       "strict_min_version": "91.0"
     }
+  },
+
+  "data_collection_permissions": {
+    "required": []
   }
 }
