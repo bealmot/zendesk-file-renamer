@@ -17,26 +17,27 @@
 
 /**
  * Available filename formats.
- * Must match the definitions in src/utils/constants.js
+ * IMPORTANT: Must match the definitions in src/utils/constants.js
+ * If updating these values, also update constants.js to keep them in sync.
  */
 const FILENAME_FORMATS = {
   PREFIX_UNDERSCORE: {
     id: 'prefix_underscore',
     label: 'ZD-{ticket}_{filename}',
     template: 'ZD-{ticket}_{filename}',
-    example: 'ZD-123456_attachment.log'
+    example: 'ZD-123456_debug.log'
   },
   BRACKET: {
     id: 'bracket',
     label: '[{ticket}] {filename}',
     template: '[{ticket}] {filename}',
-    example: '[123456] attachment.log'
+    example: '[123456] debug.log'
   },
   MINIMAL: {
     id: 'minimal',
     label: '{ticket}-{filename}',
     template: '{ticket}-{filename}',
-    example: '123456-attachment.log'
+    example: '123456-debug.log'
   }
 };
 
@@ -84,6 +85,8 @@ async function loadSettings() {
     return { ...DEFAULT_SETTINGS, ...result[STORAGE_KEY] };
   } catch (error) {
     console.error('[Popup] Failed to load settings:', error);
+    // Show user-friendly error message
+    showStatusToast('Could not load settings', true);
     return DEFAULT_SETTINGS;
   }
 }
@@ -100,7 +103,7 @@ async function saveSettings(settings) {
     showStatusToast('Settings saved');
   } catch (error) {
     console.error('[Popup] Failed to save settings:', error);
-    showStatusToast('Failed to save');
+    showStatusToast('Failed to save settings', true);
   }
 }
 
@@ -170,15 +173,24 @@ function updateDisabledState(enabled) {
  * Shows a brief status toast notification.
  *
  * @param {string} message - The message to display.
+ * @param {boolean} isError - Whether this is an error message (affects styling).
  */
-function showStatusToast(message) {
+function showStatusToast(message, isError = false) {
   elements.statusToast.textContent = message;
   elements.statusToast.classList.remove('hidden');
 
-  // Auto-hide after 1.5 seconds
+  // Toggle error styling
+  if (isError) {
+    elements.statusToast.classList.add('error');
+  } else {
+    elements.statusToast.classList.remove('error');
+  }
+
+  // Auto-hide after 1.5 seconds (longer for errors)
   setTimeout(() => {
     elements.statusToast.classList.add('hidden');
-  }, 1500);
+    elements.statusToast.classList.remove('error');
+  }, isError ? 3000 : 1500);
 }
 
 // ============================================================================

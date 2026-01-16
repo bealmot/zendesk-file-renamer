@@ -207,10 +207,11 @@ async function handleClick(event) {
   const originalFilename = getFilenameFromLink(link);
 
   // Check if already renamed (avoid double-renaming)
+  // More specific check: only skip if it matches our known format patterns
   if (originalFilename.startsWith('ZD-') ||
-      originalFilename.startsWith('[') ||
-      /^\d+-/.test(originalFilename)) {
+      /^\[\d+\]\s/.test(originalFilename)) {
     console.debug('[Zendesk File Renamer] File already renamed:', originalFilename);
+    window.open(link.href, '_blank');
     return;
   }
 

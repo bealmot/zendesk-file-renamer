@@ -19,7 +19,8 @@
 
 /**
  * Message types for extension communication.
- * Must match values in src/utils/constants.js
+ * IMPORTANT: Must match values in src/utils/constants.js
+ * If updating these values, also update constants.js to keep them in sync.
  */
 const MESSAGE_TYPES = {
   TICKET_UPDATE: 'TICKET_UPDATE',
@@ -47,6 +48,19 @@ const TICKET_URL_PATTERNS = [
  * @type {string|null}
  */
 let lastKnownTicketId = null;
+
+/**
+ * Interval ID for URL polling.
+ * Stored for cleanup when navigating away from Zendesk.
+ * @type {number|null}
+ */
+let urlPollingIntervalId = null;
+
+/**
+ * Debug mode flag - set to true for verbose logging.
+ * @type {boolean}
+ */
+const DEBUG_MODE = false;
 
 // ============================================================================
 // TICKET ID EXTRACTION
@@ -170,9 +184,12 @@ function notifyBackgroundOfTicket(ticketId) {
   chrome.runtime.sendMessage({
     type: MESSAGE_TYPES.TICKET_UPDATE,
     ticketId: ticketId
-  }).catch(() => {
-    // Ignore errors - background script may not be ready yet
-    // This is expected during extension initialization
+  }).catch((error) => {
+    // Background script may not be ready yet - this is expected during initialization
+    // Log in debug mode for troubleshooting
+    if (DEBUG_MODE) {
+      console.debug('[Zendesk File Renamer] Message send failed:', error.message);
+    }
   });
 }
 
@@ -258,6 +275,22 @@ function checkForTicketChange() {
 // ============================================================================
 
 /**
+ * Cleans up resources when navigating away from Zendesk.
+ *
+ * Clears the URL polling interval to prevent memory leaks and
+ * unnecessary processing when the content script is no longer needed.
+ */
+function cleanup() {
+  if (urlPollingIntervalId !== null) {
+    clearInterval(urlPollingIntervalId);
+    urlPollingIntervalId = null;
+    if (DEBUG_MODE) {
+      console.debug('[Zendesk File Renamer] Cleaned up URL polling interval');
+    }
+  }
+}
+
+/**
  * Initializes the content script.
  *
  * Executed when the content script is injected into the page.
@@ -280,17 +313,23 @@ function initialize() {
     ticketId: initialTicketId
   });
 
+  // Set up cleanup when page unloads
+  window.addEventListener('beforeunload', cleanup);
+  window.addEventListener('pagehide', cleanup);
+
   // Zendesk is an SPA - continuously monitor for URL/ticket changes.
   // The history API wrappers don't catch all Zendesk navigation methods.
   let lastCheckedUrl = window.location.href;
-  setInterval(() => {
+  urlPollingIntervalId = setInterval(() => {
     const currentUrl = window.location.href;
     // Check if URL changed or if ticket ID changed
     if (currentUrl !== lastCheckedUrl) {
       lastCheckedUrl = currentUrl;
       const ticketId = getCurrentTicketId();
       if (ticketId !== lastKnownTicketId) {
-        console.log('[Zendesk File Renamer] URL change detected, ticket:', ticketId);
+        if (DEBUG_MODE) {
+          console.log('[Zendesk File Renamer] URL change detected, ticket:', ticketId);
+        }
         notifyBackgroundOfTicket(ticketId);
       }
     }

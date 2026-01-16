@@ -304,12 +304,16 @@ body {
   font-size: var(--font-size-sm);
   font-weight: 500;
   opacity: 1;
-  transition: opacity var(--transition-fast);
+  transition: opacity var(--transition-fast), background var(--transition-fast);
 }
 
 .status-toast.hidden {
   opacity: 0;
   pointer-events: none;
+}
+
+.status-toast.error {
+  background: #d93025;
 }
 
 /* ============================================================================

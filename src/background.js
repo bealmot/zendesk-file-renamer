@@ -226,6 +226,47 @@ async function getTicketIdForTab(tabId) {
 // ============================================================================
 
 /**
+ * Default timeout for download filename determination (in milliseconds).
+ * If async operations take longer than this, we fall back to the original filename
+ * to prevent downloads from hanging indefinitely.
+ */
+const DOWNLOAD_TIMEOUT_MS = 5000;
+
+/**
+ * Wraps the suggest callback with a timeout to ensure it's always called.
+ *
+ * In Manifest V3, service workers can be terminated mid-execution. This wrapper
+ * ensures that suggest() is called within a reasonable timeframe, preventing
+ * downloads from hanging if the service worker is terminated or async operations
+ * fail silently.
+ *
+ * @param {Function} suggest - The original suggest callback.
+ * @param {number} timeoutMs - Timeout in milliseconds.
+ * @returns {Object} An object with safeSuggest() and cleanup() functions.
+ */
+function createSafeSuggest(suggest, timeoutMs = DOWNLOAD_TIMEOUT_MS) {
+  let called = false;
+  let timeoutId = null;
+
+  const safeSuggest = (options) => {
+    if (called) return; // Prevent double-calling
+    called = true;
+    if (timeoutId) clearTimeout(timeoutId);
+    suggest(options);
+  };
+
+  // Set up timeout fallback
+  timeoutId = setTimeout(() => {
+    if (!called) {
+      console.warn('[Zendesk File Renamer] Download handling timed out, using original filename');
+      safeSuggest(); // Call without options to keep original filename
+    }
+  }, timeoutMs);
+
+  return { safeSuggest, cleanup: () => clearTimeout(timeoutId) };
+}
+
+/**
  * Handles the download filename determination event.
  *
  * This is the core download interception logic. Chrome fires this event
@@ -240,6 +281,8 @@ async function getTicketIdForTab(tabId) {
  * @param {Function} suggest - Callback to suggest a new filename.
  */
 async function handleDownloadFilename(downloadItem, suggest) {
+  // Wrap suggest() with timeout protection
+  const { safeSuggest } = createSafeSuggest(suggest);
   console.log('[Zendesk File Renamer] Processing download...');
 
   // Get current settings
@@ -249,7 +292,7 @@ async function handleDownloadFilename(downloadItem, suggest) {
   // If renaming is disabled, use original filename
   if (!settings.enabled) {
     console.log('[Zendesk File Renamer] SKIP: Renaming disabled');
-    suggest();
+    safeSuggest();
     return;
   }
 
@@ -264,7 +307,7 @@ async function handleDownloadFilename(downloadItem, suggest) {
   if (!isZendeskUrl(referrerUrl) && !tabId) {
     // Download not from a Zendesk tab
     console.log('[Zendesk File Renamer] SKIP: Not from Zendesk, referrer:', referrerUrl);
-    suggest();
+    safeSuggest();
     return;
   }
 
@@ -280,36 +323,67 @@ async function handleDownloadFilename(downloadItem, suggest) {
   if (!ticketId && isZendeskUrl(referrerUrl)) {
     console.log('[Zendesk File Renamer] Trying fallback methods...');
 
-    // Method 1: Check if we have ANY cached ticket (most recent)
-    if (tabTicketMap.size > 0) {
-      // Get the most recently added ticket from cache
-      const entries = [...tabTicketMap.entries()];
-      const [cachedTabId, cachedTicket] = entries[entries.length - 1];
-      ticketId = cachedTicket;
-      console.log('[Zendesk File Renamer] Using cached ticket from tab', cachedTabId, ':', ticketId);
-    }
-
-    // Method 2: Query all Zendesk tabs if no cache
-    if (!ticketId) {
-      console.log('[Zendesk File Renamer] No cache, querying all Zendesk tabs...');
-      try {
-        const zendeskTabs = await chrome.tabs.query({ url: '*://*.zendesk.com/*' });
-        console.log('[Zendesk File Renamer] Found', zendeskTabs.length, 'Zendesk tabs');
-
-        for (const tab of zendeskTabs) {
+    // Method 1: Try to get the currently active Zendesk tab first
+    try {
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (activeTab && isZendeskUrl(activeTab.url || '')) {
+        // Check if we have a cached ticket for the active tab
+        if (tabTicketMap.has(activeTab.id)) {
+          ticketId = tabTicketMap.get(activeTab.id);
+          console.log('[Zendesk File Renamer] Using ticket from active tab', activeTab.id, ':', ticketId);
+        } else {
+          // Query the active tab's content script
           try {
-            const response = await chrome.tabs.sendMessage(tab.id, {
+            const response = await chrome.tabs.sendMessage(activeTab.id, {
               type: MESSAGE_TYPES.GET_TICKET
             });
             if (response && response.ticketId) {
               ticketId = response.ticketId;
-              tabTicketMap.set(tab.id, ticketId);
-              console.log('[Zendesk File Renamer] Got ticket from tab', tab.id, ':', ticketId);
-              break;
+              tabTicketMap.set(activeTab.id, ticketId);
+              console.log('[Zendesk File Renamer] Got ticket from active tab', activeTab.id, ':', ticketId);
             }
           } catch (msgError) {
-            // Tab might not have content script, continue to next
-            console.debug('[Zendesk File Renamer] Tab', tab.id, 'failed:', msgError.message);
+            console.debug('[Zendesk File Renamer] Active tab query failed:', msgError.message);
+          }
+        }
+      }
+    } catch (e) {
+      console.debug('[Zendesk File Renamer] Could not query active tab:', e.message);
+    }
+
+    // Method 2: If no active Zendesk tab, query all Zendesk tabs
+    if (!ticketId) {
+      console.log('[Zendesk File Renamer] No active Zendesk tab, querying all Zendesk tabs...');
+      try {
+        const zendeskTabs = await chrome.tabs.query({ url: '*://*.zendesk.com/*' });
+        console.log('[Zendesk File Renamer] Found', zendeskTabs.length, 'Zendesk tabs');
+
+        // Prioritize tabs that have cached tickets (known to be on ticket pages)
+        for (const tab of zendeskTabs) {
+          if (tabTicketMap.has(tab.id)) {
+            ticketId = tabTicketMap.get(tab.id);
+            console.log('[Zendesk File Renamer] Using cached ticket from tab', tab.id, ':', ticketId);
+            break;
+          }
+        }
+
+        // If still no ticket, query content scripts
+        if (!ticketId) {
+          for (const tab of zendeskTabs) {
+            try {
+              const response = await chrome.tabs.sendMessage(tab.id, {
+                type: MESSAGE_TYPES.GET_TICKET
+              });
+              if (response && response.ticketId) {
+                ticketId = response.ticketId;
+                tabTicketMap.set(tab.id, ticketId);
+                console.log('[Zendesk File Renamer] Got ticket from tab', tab.id, ':', ticketId);
+                break;
+              }
+            } catch (msgError) {
+              // Tab might not have content script, continue to next
+              console.debug('[Zendesk File Renamer] Tab', tab.id, 'failed:', msgError.message);
+            }
           }
         }
       } catch (e) {
@@ -322,7 +396,7 @@ async function handleDownloadFilename(downloadItem, suggest) {
   if (!ticketId) {
     console.log('[Zendesk File Renamer] SKIP: No ticket ID found');
     console.log('[Zendesk File Renamer] Current tabTicketMap:', [...tabTicketMap.entries()]);
-    suggest();
+    safeSuggest();
     return;
   }
 
@@ -330,11 +404,11 @@ async function handleDownloadFilename(downloadItem, suggest) {
   const originalFilename = extractFilename(downloadItem.filename);
 
   // Check if file already has a ticket prefix (avoid double-renaming)
+  // More specific check: only skip if it matches our known format patterns
   if (originalFilename.startsWith('ZD-') ||
-      originalFilename.startsWith('[') ||
-      /^\d+-/.test(originalFilename)) {
+      /^\[\d+\]\s/.test(originalFilename)) {
     console.debug('[Zendesk File Renamer] File already appears renamed:', originalFilename);
-    suggest();
+    safeSuggest();
     return;
   }
 
@@ -352,7 +426,7 @@ async function handleDownloadFilename(downloadItem, suggest) {
   });
 
   // Suggest the new filename
-  suggest({ filename: newPath });
+  safeSuggest({ filename: newPath });
 }
 
 // ============================================================================
