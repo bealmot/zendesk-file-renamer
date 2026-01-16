@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Zendesk File Renamer",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Automatically rename downloaded files from Zendesk tickets to include the ticket number for better organization.",
   "minimum_chrome_version": "91",
 
